@@ -1,0 +1,35 @@
+[unstable]
+build-std = ["core", "alloc", "panic_abort"]
+build-std-features = ["optimize_for_size"]
+
+[build]
+target = "xtensa-esp32s3-none-elf"
+
+[target.xtensa-esp32s3-none-elf]
+runner = [
+  "probe-rs",
+  "run",
+  "--chip",
+  "esp32s3",
+  "--log-format",
+  "{t:>10:dimmed} {L:>5:bold} {m:dimmed} {s}",
+]
+rustflags = [
+  "-Cforce-frame-pointers=yes",
+  "-Clink-arg=-Tlinkall.x",
+  "-Clink-arg=-Tdefmt.x",
+]
+
+[env]
+DEFMT_LOG = "info"
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+debug = 2
+strip = false
+lto = true

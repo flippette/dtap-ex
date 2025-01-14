@@ -1,0 +1,43 @@
+[package]
+name = "esp32s3-wifi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+defmt = "0.3"
+defmt-rtt = "0.4"
+smart-leds = "0.4"
+static_cell = "2.1"
+ws2812-spi = "0.5"
+
+[dependencies.embassy-executor]
+version = "0.6"
+features = ["nightly"]
+
+[dependencies.embassy-net]
+version = "0.5"
+features = ["defmt", "tcp", "dhcpv4", "medium-ethernet"]
+
+[dependencies.embassy-time]
+version = "0.3"
+features = ["defmt-timestamp-uptime-us"]
+
+[dependencies.esp-alloc]
+version = "0.5"
+features = ["nightly"]
+
+[dependencies.esp-backtrace]
+version = "0.14"
+features = ["esp32s3", "defmt", "colors", "exception-handler", "panic-handler"]
+
+[dependencies.esp-hal]
+version = "0.22"
+features = ["esp32s3", "defmt"]
+
+[dependencies.esp-hal-embassy]
+version = "0.5"
+features = ["esp32s3", "defmt", "integrated-timers"]
+
+[dependencies.esp-wifi]
+version = "0.11"
+features = ["esp32s3", "defmt", "wifi"]
