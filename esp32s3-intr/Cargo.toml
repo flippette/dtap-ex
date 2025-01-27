@@ -1,0 +1,11 @@
+[package]
+name = "esp32s3-intr"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies.esp-hal]
+version = "0.23"
+features = ["esp32s3"]
+
+[dependencies.panic-halt]
+version = "1.0"

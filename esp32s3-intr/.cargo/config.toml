@@ -1,0 +1,22 @@
+[unstable]
+build-std = ["core", "panic_abort"]
+build-std-features = ["optimize_for_size"]
+
+[build]
+target = "xtensa-esp32s3-none-elf"
+
+[target.xtensa-esp32s3-none-elf]
+runner = ["probe-rs", "run", "--chip", "esp32s3", "--speed", "5000"]
+rustflags = ["-Clink-arg=-Tlinkall.x"]
+
+[profile.dev]
+opt-level = 1
+panic = "abort"
+
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+strip = false
+debug = 2
+lto = true
