@@ -22,6 +22,7 @@ use embassy_net::{
     tcp::client::{TcpClient, TcpClientState},
 };
 use embassy_rp::{
+    adc::{self, Adc},
     bind_interrupts,
     block::ImageDef,
     gpio::{Level, Output},
@@ -240,11 +241,27 @@ async fn main(s: Spawner) -> Result<(), Error> {
 
     drop(req);
 
+    // ===== initialize temperature sensor ===== //
+
+    let mut adc = Adc::new(p.ADC, Irqs, <_>::default());
+    let mut sensor = adc::Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
+
+    // first read seems to have significant error, do this so we get better
+    // values in the upload loop
+    adc.read(&mut sensor).await?;
+    info!("waiting for ADC temp sensor to stabilize...");
+    Timer::after_secs(10).await;
+
     // ===== upload readings ===== //
 
     loop {
-        let temp =
-            trng.blocking_next_u32() as f32 / u32::MAX as f32 * 40.0 - 10.0;
+        let temp = {
+            let raw = adc.read(&mut sensor).await?;
+
+            // see chapter 12.4.6 of the RP2350 datasheet for the formula
+            // IOVDD on my board seems to have drifted a bit, usually it's 3.3V
+            27.0 - (raw as f32 * 3.375 / 4096.0 - 0.706) / 0.001721
+        };
 
         let mut path = String::<128>::new();
         uwrite!(
@@ -327,6 +344,7 @@ bind_interrupts! {
     struct Irqs {
         PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
         TRNG_IRQ => trng::InterruptHandler<TRNG>;
+        ADC_IRQ_FIFO => adc::InterruptHandler;
     }
 }
 

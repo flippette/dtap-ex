@@ -26,13 +26,13 @@ version = "0.3"
 version = "0.7"
 features = ["arch-cortex-m", "defmt", "executor-thread", "nightly"]
 
-[dependencies.embassy-rp]
-version = "0.3"
-features = ["rp235xb", "defmt", "time-driver", "unstable-pac"]
-
 [dependencies.embassy-net]
 version = "0.6"
 features = ["defmt", "dhcpv4", "dns", "tcp"]
+
+[dependencies.embassy-rp]
+version = "0.3"
+features = ["rp235xb", "defmt", "time-driver", "unstable-pac"]
 
 [dependencies.embassy-time]
 version = "0.4"
@@ -49,3 +49,11 @@ features = ["print-defmt"]
 [dependencies.reqwless]
 version = "0.13"
 features = ["defmt"]
+
+[patch.crates-io]
+cyw43.git = "https://github.com/embassy-rs/embassy"
+cyw43-pio.git = "https://github.com/embassy-rs/embassy"
+embassy-executor.git = "https://github.com/embassy-rs/embassy"
+embassy-net.git = "https://github.com/embassy-rs/embassy"
+embassy-rp.git = "https://github.com/embassy-rs/embassy"
+embassy-time.git = "https://github.com/embassy-rs/embassy"

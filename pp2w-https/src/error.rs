@@ -2,6 +2,7 @@
 
 use defmt::{Debug2Format, Format, Formatter, write};
 use embassy_executor::SpawnError;
+use embassy_rp::adc;
 use embassy_time::TimeoutError;
 
 /// crate-wide error type implementing [`Format`].
@@ -9,6 +10,7 @@ pub enum Error {
     Spawn(SpawnError),
     Cyw43(cyw43::ControlError),
     Timeout(TimeoutError),
+    Adc(adc::Error),
     Http(reqwless::Error),
     AdHoc(defmt::Str),
 }
@@ -21,6 +23,7 @@ impl Format for Error {
                 write!(fmt, "cyw43 error: {}", Debug2Format(&err))
             }
             Self::Timeout(_) => write!(fmt, "operation timed out!"),
+            Self::Adc(err) => write!(fmt, "ADC error: {}", err),
             Self::Http(err) => write!(fmt, "HTTP error: {}", err),
             Self::AdHoc(err) => write!(fmt, "ad-hoc error: {=istr}", err),
         }
@@ -42,6 +45,12 @@ impl From<cyw43::ControlError> for Error {
 impl From<TimeoutError> for Error {
     fn from(err: TimeoutError) -> Self {
         Self::Timeout(err)
+    }
+}
+
+impl From<adc::Error> for Error {
+    fn from(err: adc::Error) -> Self {
+        Self::Adc(err)
     }
 }
 
