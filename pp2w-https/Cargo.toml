@@ -1,0 +1,51 @@
+[package]
+name = "pp2w-https"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cortex-m-rt = "0.7"
+defmt = "0.3"
+defmt-rtt = "0.4"
+static_cell = "2.1"
+ufmt = "0.2"
+ufmt_float = "0.2"
+
+[dependencies.cortex-m]
+version = "0.7"
+features = ["critical-section-single-core", "inline-asm"]
+
+[dependencies.cyw43]
+version = "0.3"
+features = ["defmt", "firmware-logs"]
+
+[dependencies.cyw43-pio]
+version = "0.3"
+
+[dependencies.embassy-executor]
+version = "0.7"
+features = ["arch-cortex-m", "defmt", "executor-thread", "nightly"]
+
+[dependencies.embassy-rp]
+version = "0.3"
+features = ["rp235xb", "defmt", "time-driver", "unstable-pac"]
+
+[dependencies.embassy-net]
+version = "0.6"
+features = ["defmt", "dhcpv4", "dns", "tcp"]
+
+[dependencies.embassy-time]
+version = "0.4"
+features = ["defmt-timestamp-uptime-us"]
+
+[dependencies.heapless]
+version = "0.8"
+features = ["defmt-03", "ufmt"]
+
+[dependencies.panic-probe]
+version = "0.3"
+features = ["print-defmt"]
+
+[dependencies.reqwless]
+version = "0.13"
+features = ["defmt"]

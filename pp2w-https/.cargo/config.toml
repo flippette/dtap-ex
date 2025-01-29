@@ -1,0 +1,43 @@
+[unstable]
+build-std = ["core", "panic_abort"]
+build-std-features = ["optimize_for_size"]
+
+[build]
+target = "thumbv8m.main-none-eabihf"
+
+[target.thumbv8m.main-none-eabihf]
+linker = "flip-link"
+runner = [
+  "probe-rs",
+  "run",
+  "--chip",
+  "rp235x",
+  "--speed",
+  "50000",
+  "--log-format",
+  "{t:>10:dimmed} {L:>5:bold} {s}",
+]
+rustflags = [
+  "-Ctarget-cpu=cortex-m33",
+  "-Clink-arg=--nmagic",
+  "-Clink-arg=-Tlink.x",
+  "-Clink-arg=-Tdefmt.x",
+]
+
+[env]
+DEFMT_LOG = "info"
+DEFMT_RTT_BUFFER_SIZE = "2048"
+SMOLTCP_DNS_MAX_SERVER_COUNT = "4"
+# APP_SSID = ""
+# APP_PASS = ""
+# APP_API_HOST = ""
+# APP_API_PASS = ""
+# APP_API_UUID = ""
+
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+strip = false
+debug = 2
+lto = true
