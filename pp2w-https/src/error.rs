@@ -1,6 +1,6 @@
 //! crate-wide error type implementing [`Format`].
 
-use defmt::{Debug2Format, Format, Formatter, write};
+use defmt::{Format, Formatter, write};
 use embassy_executor::SpawnError;
 use embassy_rp::adc;
 use embassy_time::TimeoutError;
@@ -19,9 +19,7 @@ impl Format for Error {
     fn format(&self, fmt: Formatter) {
         match self {
             Self::Spawn(err) => write!(fmt, "failed to spawn task: {}", err),
-            Self::Cyw43(err) => {
-                write!(fmt, "cyw43 error: {}", Debug2Format(&err))
-            }
+            Self::Cyw43(err) => write!(fmt, "cyw43 error: code {}", err.status),
             Self::Timeout(_) => write!(fmt, "operation timed out!"),
             Self::Adc(err) => write!(fmt, "ADC error: {}", err),
             Self::Http(err) => write!(fmt, "HTTP error: {}", err),
