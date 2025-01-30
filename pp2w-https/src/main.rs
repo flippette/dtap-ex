@@ -11,7 +11,7 @@ use core::str;
 use defmt_rtt as _;
 use panic_probe as _;
 
-use crate::error::Error;
+use crate::error::{Error, Report};
 use cyw43::{JoinAuth, JoinOptions};
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use defmt::{debug, error, info, intern};
@@ -51,15 +51,22 @@ const NET_RETRIES: usize = 10;
 
 #[main]
 async fn _start(s: Spawner) {
-    if let Err(err) = main(s).await {
-        error!("main returned error: {}", err);
-        return;
+    if let Err(rep) = main(s).await {
+        error!("{}", rep.error);
+        error!("stacktrace:");
+        rep.trace.iter().for_each(|loc| error!("  {}", loc));
+        if rep.more {
+            error!("  (rest of stacktrace omitted)");
+        }
+
+        // basically `panic!` but without dirtying the logs
+        cortex_m::asm::udf();
     }
 
     info!("main exited!");
 }
 
-async fn main(s: Spawner) -> Result<(), Error> {
+async fn main(s: Spawner) -> Result<(), Report> {
     // ===== initialize the embassy-rp HAL ===== //
 
     let p = embassy_rp::init(<_>::default());
@@ -96,7 +103,7 @@ async fn main(s: Spawner) -> Result<(), Error> {
                 .await;
         info!("cyw43 driver init!");
 
-        s.spawn(cyw43_runner(runner))?;
+        report!(s.spawn(cyw43_runner(runner)))?;
 
         (dev, ctrl)
     };
@@ -111,17 +118,19 @@ async fn main(s: Spawner) -> Result<(), Error> {
     let ssid = env!("APP_SSID");
     let pass = env!("APP_PASS");
 
-    ctrl.join(ssid, {
-        let mut opts = JoinOptions::default();
-        opts.passphrase = pass.as_bytes();
-        opts.auth = if pass.is_empty() {
-            JoinAuth::Open
-        } else {
-            JoinAuth::Wpa2Wpa3
-        };
-        opts
-    })
-    .await?;
+    report!(
+        ctrl.join(ssid, {
+            let mut opts = JoinOptions::default();
+            opts.passphrase = pass.as_bytes();
+            opts.auth = if pass.is_empty() {
+                JoinAuth::Open
+            } else {
+                JoinAuth::Wpa2Wpa3
+            };
+            opts
+        })
+        .await
+    )?;
     info!("joined SSID `{=str}`!", ssid);
 
     // ===== initialize the embassy-net stack ===== //
@@ -141,7 +150,7 @@ async fn main(s: Spawner) -> Result<(), Error> {
         );
         info!("embassy-net stack init!");
 
-        s.spawn(embassy_net_runner(runner))?;
+        report!(s.spawn(embassy_net_runner(runner)))?;
 
         stack
     };
@@ -149,11 +158,13 @@ async fn main(s: Spawner) -> Result<(), Error> {
     // ===== wait for DHCP configuration ===== //
 
     info!("waiting for DHCP configuration...");
-    util::with_retries(
-        || stack.wait_config_up().with_timeout(NET_TIMEOUT),
-        NET_RETRIES,
-    )
-    .await?;
+    report!(
+        util::with_retries(
+            || stack.wait_config_up().with_timeout(NET_TIMEOUT),
+            NET_RETRIES,
+        )
+        .await
+    )?;
     info!("DHCP configuration complete!");
 
     // ===== initialize HTTP client ===== //
@@ -199,7 +210,7 @@ async fn main(s: Spawner) -> Result<(), Error> {
         let pass = env!("APP_API_PASS");
         let uuid = env!("APP_API_UUID");
 
-        let mut req = {
+        let mut req = report!({
             let mut i = 0;
 
             loop {
@@ -225,10 +236,10 @@ async fn main(s: Spawner) -> Result<(), Error> {
                     }
                 }
             }
-        }?
+        })?
         .path("/ping");
 
-        let res = {
+        let res = report!({
             let mut i = 0;
 
             loop {
@@ -250,13 +261,15 @@ async fn main(s: Spawner) -> Result<(), Error> {
                     }
                 }
             }
-        }?;
+        })?;
 
         match res.status.into() {
             Status::Ok => info!("we have API connectivity!"),
             other => {
                 error!("API connectivity test failed: {}", other);
-                return Err(intern!("API connectivity test failed").into());
+                return report!(Err(Error::from(intern!(
+                    "API connectivity test failed"
+                ))));
             }
         }
 
@@ -264,7 +277,7 @@ async fn main(s: Spawner) -> Result<(), Error> {
 
         // first read seems to have significant error, do this so we get better
         // values in the upload loop
-        adc.read(&mut sensor).await?;
+        report!(adc.read(&mut sensor).await)?;
         info!("waiting for ADC temp sensor to stabilize...");
         Timer::after_secs(10).await;
 
@@ -272,7 +285,7 @@ async fn main(s: Spawner) -> Result<(), Error> {
 
         'upload: loop {
             let temp = {
-                let raw = adc.read(&mut sensor).await?;
+                let raw = report!(adc.read(&mut sensor).await)?;
 
                 // see chapter 12.4.6 of the RP2350 datasheet for the formula
                 // IOVDD on my board seems to have drifted a bit, usually it's 3.3V
@@ -280,16 +293,18 @@ async fn main(s: Spawner) -> Result<(), Error> {
             };
 
             let mut path = String::<128>::new();
-            uwrite!(
-                path,
-                "/add?uuid={}&pass={}&reading={}",
-                uuid,
-                pass,
-                uFmt_f32::One(temp)
-            )
-            .map_err(|()| Error::AdHoc(intern!("path overflow!")))?;
+            report!(
+                uwrite!(
+                    path,
+                    "/add?uuid={}&pass={}&reading={}",
+                    uuid,
+                    pass,
+                    uFmt_f32::One(temp)
+                )
+                .map_err(|()| Error::AdHoc(intern!("path overflow!")))
+            )?;
 
-            let mut req = {
+            let mut req = report!({
                 let mut i = 0;
 
                 loop {
@@ -315,10 +330,10 @@ async fn main(s: Spawner) -> Result<(), Error> {
                         }
                     }
                 }
-            }?
+            })?
             .path(&path);
 
-            let res = {
+            let res = report!({
                 let mut i = 0;
 
                 loop {
@@ -340,7 +355,7 @@ async fn main(s: Spawner) -> Result<(), Error> {
                         }
                     }
                 }
-            }?;
+            })?;
 
             info!("");
             info!("===== response headers:");
