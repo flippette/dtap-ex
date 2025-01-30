@@ -4,17 +4,17 @@
 #![expect(unstable_features)]
 
 mod error;
+mod panic;
+mod upload;
 mod util;
-
-use core::str;
 
 use defmt_rtt as _;
 use panic_probe as _;
 
-use crate::error::{Error, Report};
+use crate::error::Report;
 use cyw43::{JoinAuth, JoinOptions, ScanOptions};
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
-use defmt::{debug, error, info, intern};
+use defmt::{error, info};
 use embassy_executor::{Spawner, main, task};
 use embassy_net::{
     StackResources,
@@ -30,16 +30,9 @@ use embassy_rp::{
     pio::{self, Pio},
     trng::{self, Trng},
 };
-use embassy_time::{Duration, Timer, WithTimeout};
-use heapless::String;
-use reqwless::{
-    client::{HttpClient, TlsConfig, TlsVerify},
-    request::{Method, RequestBuilder},
-    response::Status,
-};
+use embassy_time::{Duration, WithTimeout};
+use reqwless::client::{HttpClient, TlsConfig, TlsVerify};
 use static_cell::{ConstStaticCell, StaticCell};
-use ufmt::uwrite;
-use ufmt_float::uFmt_f32;
 
 #[used]
 #[unsafe(link_section = ".start_block")]
@@ -52,15 +45,7 @@ const NET_RETRIES: usize = 10;
 #[main]
 async fn _start(s: Spawner) {
     if let Err(rep) = main(s).await {
-        error!("{}", rep.error);
-        error!("stacktrace:");
-        rep.trace.iter().for_each(|loc| error!("  {}", loc));
-        if rep.more {
-            error!("  (rest of stacktrace omitted)");
-        }
-
-        // basically `panic!` but without dirtying the logs
-        cortex_m::asm::udf();
+        panic!(rep);
     }
 
     info!("main exited!");
@@ -193,12 +178,7 @@ async fn main(s: Spawner) -> Result<(), Report> {
 
     // ===== initialize HTTP client ===== //
 
-    let http_buf = {
-        static BUFFER: ConstStaticCell<[u8; 65536]> =
-            ConstStaticCell::new([0; _]);
-        BUFFER.take()
-    };
-    let mut http = {
+    let http = {
         static TCP_STATE: ConstStaticCell<TcpClientState<1, 1024, 1024>> =
             ConstStaticCell::new(TcpClientState::new());
         static TCP_CLIENT: StaticCell<TcpClient<'static, 1, 1024, 1024>> =
@@ -224,207 +204,14 @@ async fn main(s: Spawner) -> Result<(), Report> {
 
     // ===== initialize temperature sensor ===== //
 
-    let mut adc = Adc::new(p.ADC, Irqs, <_>::default());
-    let mut sensor = adc::Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
+    let adc = Adc::new(p.ADC, Irqs, <_>::default());
+    let sensor = adc::Channel::new_temp_sensor(p.ADC_TEMP_SENSOR);
 
-    'api: loop {
-        // ===== API connectivity test ===== //
+    // ===== spawn upload task ===== //
 
-        let host = env!("APP_API_HOST");
-        let pass = env!("APP_API_PASS");
-        let uuid = env!("APP_API_UUID");
+    report!(s.spawn(upload::task(http, adc, sensor)))?;
 
-        let mut req = report!({
-            let mut i = 0;
-
-            loop {
-                match http
-                    .request(Method::GET, host)
-                    .with_timeout(NET_TIMEOUT)
-                    .await
-                {
-                    Ok(Ok(req)) => break Ok::<_, Error>(req),
-                    Ok(Err(err)) if i == NET_RETRIES - 1 => {
-                        error!("{}", err);
-                        Timer::after(NET_COOLDOWN).await;
-                        continue 'api;
-                    }
-                    Err(err) if i == NET_RETRIES - 1 => {
-                        error!("{}", err);
-                        Timer::after(NET_COOLDOWN).await;
-                        continue 'api;
-                    }
-                    _ => {
-                        i += 1;
-                        Timer::after(NET_COOLDOWN).await;
-                    }
-                }
-            }
-        })?
-        .path("/ping");
-
-        let res = report!({
-            let mut i = 0;
-
-            loop {
-                match req.send(http_buf).with_timeout(NET_TIMEOUT).await {
-                    Ok(Ok(res)) => break Ok::<_, Error>(res),
-                    Ok(Err(err)) if i == NET_RETRIES - 1 => {
-                        error!("{}", err);
-                        Timer::after(NET_COOLDOWN).await;
-                        continue 'api;
-                    }
-                    Err(err) if i == NET_RETRIES - 1 => {
-                        error!("{}", err);
-                        Timer::after(NET_COOLDOWN).await;
-                        continue 'api;
-                    }
-                    _ => {
-                        i += 1;
-                        Timer::after(NET_COOLDOWN).await;
-                    }
-                }
-            }
-        })?;
-
-        match res.status.into() {
-            Status::Ok => info!("we have API connectivity!"),
-            other => {
-                error!("API connectivity test failed: {}", other);
-                return report!(Err(Error::from(intern!(
-                    "API connectivity test failed"
-                ))));
-            }
-        }
-
-        drop(req);
-
-        // first read seems to have significant error, do this so we get better
-        // values in the upload loop
-        report!(adc.read(&mut sensor).await)?;
-        info!("waiting for ADC temp sensor to stabilize...");
-        Timer::after_secs(10).await;
-
-        // ===== upload readings ===== //
-
-        'upload: loop {
-            let temp = {
-                let raw = report!(adc.read(&mut sensor).await)?;
-
-                // see chapter 12.4.6 of the RP2350 datasheet for the formula
-                // IOVDD on my board seems to have drifted a bit, usually it's 3.3V
-                27.0 - (f32::from(raw) * 3.375 / 4096.0 - 0.706) / 0.001721
-            };
-
-            let mut path = String::<128>::new();
-            report!(
-                uwrite!(
-                    path,
-                    "/add?uuid={}&pass={}&reading={}",
-                    uuid,
-                    pass,
-                    uFmt_f32::One(temp)
-                )
-                .map_err(|()| Error::AdHoc(intern!("path overflow!")))
-            )?;
-
-            let mut req = report!({
-                let mut i = 0;
-
-                loop {
-                    match http
-                        .request(Method::GET, host)
-                        .with_timeout(NET_TIMEOUT)
-                        .await
-                    {
-                        Ok(Ok(req)) => break Ok::<_, Error>(req),
-                        Ok(Err(err)) if i == NET_RETRIES - 1 => {
-                            error!("{}", err);
-                            Timer::after(NET_COOLDOWN).await;
-                            continue 'api;
-                        }
-                        Err(err) if i == NET_RETRIES - 1 => {
-                            error!("{}", err);
-                            Timer::after(NET_COOLDOWN).await;
-                            continue 'upload;
-                        }
-                        _ => {
-                            i += 1;
-                            Timer::after(NET_COOLDOWN).await;
-                        }
-                    }
-                }
-            })?
-            .path(&path);
-
-            let res = report!({
-                let mut i = 0;
-
-                loop {
-                    match req.send(http_buf).with_timeout(NET_TIMEOUT).await {
-                        Ok(Ok(res)) => break Ok::<_, Error>(res),
-                        Ok(Err(err)) if i == NET_RETRIES - 1 => {
-                            error!("{}", err);
-                            Timer::after(NET_COOLDOWN).await;
-                            continue 'api;
-                        }
-                        Err(err) if i == NET_RETRIES - 1 => {
-                            error!("{}", err);
-                            Timer::after(NET_COOLDOWN).await;
-                            continue 'upload;
-                        }
-                        _ => {
-                            i += 1;
-                            Timer::after(NET_COOLDOWN).await;
-                        }
-                    }
-                }
-            })?;
-
-            info!("");
-            info!("===== response headers:");
-            info!("status: {}", Status::from(res.status));
-            info!("headers:");
-            res.headers()
-                .filter(|(k, _)| !k.is_empty())
-                .for_each(|(k, v)| match str::from_utf8(v) {
-                    Ok(v) => info!("  {=str}: {=str}", k, v),
-                    Err(_) => info!("  {=str}: <invalid UTF-8> {=[u8]}", k, v),
-                });
-
-            let body = match res
-                .body()
-                .read_to_end()
-                .with_timeout(NET_TIMEOUT)
-                .await
-            {
-                Ok(Ok(body)) => body,
-                Ok(Err(err)) => {
-                    error!("{}", err);
-                    continue 'upload;
-                }
-                Err(err) => {
-                    error!("{}", err);
-                    continue 'upload;
-                }
-            };
-
-            info!("===== response body ({=usize} bytes):", body.len());
-            debug!("body = {=[u8]}", body);
-            match str::from_utf8(body) {
-                _ if body.is_empty() => info!("<empty>"),
-                Ok(s) => s.lines().for_each(|s| info!("{=str}", s)),
-                Err(_) => info!(
-                    "<invalid UTF-8> {=[u8]} (+{=usize} bytes)",
-                    &body[..body.len().min(64)],
-                    body.len().saturating_sub(64),
-                ),
-            }
-            info!("===== response end");
-
-            Timer::after(NET_COOLDOWN).await;
-        }
-    }
+    Ok(())
 }
 
 bind_interrupts! {
