@@ -12,7 +12,7 @@ use defmt_rtt as _;
 use panic_probe as _;
 
 use crate::error::{Error, Report};
-use cyw43::{JoinAuth, JoinOptions};
+use cyw43::{JoinAuth, JoinOptions, ScanOptions};
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use defmt::{debug, error, info, intern};
 use embassy_executor::{Spawner, main, task};
@@ -118,10 +118,34 @@ async fn main(s: Spawner) -> Result<(), Report> {
     let ssid = env!("APP_SSID");
     let pass = env!("APP_PASS");
 
+    info!("scanning for SSID `{=str}`...", ssid);
+    let mut aps = ctrl
+        .scan({
+            let mut opts = ScanOptions::default();
+            opts.ssid = ssid.parse().ok();
+            opts
+        })
+        .await;
+    while let Some(ap) = aps.next().await {
+        info!(
+            "found {=u8:02x}:{=u8:02x}:{=u8:02x}:{=u8:02x}:{=u8:02x}:{=u8:02x} ({=i16} dBm)",
+            ap.bssid[0],
+            ap.bssid[1],
+            ap.bssid[2],
+            ap.bssid[3],
+            ap.bssid[4],
+            ap.bssid[5],
+            ap.rssi,
+        )
+    }
+    drop(aps);
+
+    info!("joining SSID `{=str}`...", ssid);
     report!(
         ctrl.join(ssid, {
             let mut opts = JoinOptions::default();
             opts.passphrase = pass.as_bytes();
+            opts.cipher_aes = !pass.is_empty();
             opts.auth = if pass.is_empty() {
                 JoinAuth::Open
             } else {
