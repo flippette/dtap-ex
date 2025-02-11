@@ -1,0 +1,29 @@
+[unstable]
+build-std = ["std", "panic_abort"]
+build-std-features = ["optimize_for_size"]
+
+[build]
+target = "xtensa-esp32s3-espidf"
+
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash -B 921600 -s 4mb -M"
+rustflags = ["--cfg", "espidf_time64"]
+
+[env]
+MCU = "esp32s3"
+ESP_IDF_VERSION = "v5.3.2"
+# WIFI_SSID = ""
+# WIFI_PASS = ""
+
+[profile.dev]
+opt-level = 1
+panic = "abort"
+
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+strip = false
+debug = 2
+lto = true

@@ -1,0 +1,14 @@
+[package]
+name = "esp32s3-idf-ota"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+embedded-svc = "0.28"
+esp-idf-svc = "0.51"
+log = "0.4"
+
+[build-dependencies.embuild]
+version = "0.33"
+features = ["espidf"]
