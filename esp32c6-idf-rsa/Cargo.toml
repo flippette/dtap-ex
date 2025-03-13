@@ -1,0 +1,21 @@
+[package]
+name = "esp32c6-idf-rsa"
+version = "0.1.0"
+edition = "2024"
+authors = ["flippette <me@flippo.cc>"]
+
+[dependencies]
+anyhow = "1.0"
+base16 = "0.2"
+base64 = "0.22"
+embedded-svc = "0.28"
+esp-idf-svc = "0.51"
+log = "0.4"
+percent-encoding = "2.3"
+rand = "0.9"
+sealed = "0.6"
+serde_json = "1.0"
+thiserror = "2.0"
+
+[build-dependencies]
+embuild = "0.33"

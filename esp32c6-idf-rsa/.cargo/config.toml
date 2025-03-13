@@ -1,0 +1,29 @@
+[unstable]
+build-std = ["std", "panic_abort"]
+build-std-features = ["optimize_for_size"]
+
+[build]
+target = "riscv32imac-esp-espidf"
+# target = "xtensa-esp32-espidf"
+# target = "xtensa-esp32s3-espidf"
+
+[target.riscv32imac-esp-espidf]
+# [target.xtensa-esp32-espidf]
+# [target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash -B 1500000 -T parts.csv -M"
+rustflags = ["--cfg", "espidf_time64"]
+
+[env]
+ESP_IDF_VERSION = "v5.3.2"
+MCU = "esp32c6"
+# MCU = "esp32"
+# MCU = "esp32s3"
+
+[profile.release]
+opt-level = "z"
+codegen-units = 1
+panic = "abort"
+strip = false
+debug = 2
+lto = true
