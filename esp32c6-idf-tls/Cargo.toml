@@ -1,0 +1,14 @@
+[package]
+name = "esp32c6-idf-tls"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+const_format = "0.2"
+embedded-svc = "0.28"
+esp-idf-svc = "0.51"
+log = "0.4"
+
+[build-dependencies]
+embuild = "0.33"
